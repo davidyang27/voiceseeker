@@ -63,5 +63,20 @@ sudo systemctl disable buoy_acoustic_system.service
 sudo systemctl restart buoy_acoustic_system.service
 
 
+
+
+
+
+Satellite (ST6100)
+1. connect to ST6100
+
 sudo apt install picocom
 picocom -b 9600 /dev/ttyUSB0
+
+2. set ST6100 default mode at AT command
+
+shell> stop
+#cui sp
+sp# config system defInterface at wr
+
+
