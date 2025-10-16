@@ -63,5 +63,5 @@ sudo systemctl disable buoy_acoustic_system.service
 sudo systemctl restart buoy_acoustic_system.service
 
 
-
+sudo apt install picocom
 picocom -b 9600 /dev/ttyUSB0
