@@ -12,7 +12,6 @@ import openvino as ov
 import sys
 
 # ====== 匯入衛星傳輸模組 ======
-sys.path.append("/home/david/Desktop/skybee")
 from st6100_send_msg import st6100_send_msg
 
 
