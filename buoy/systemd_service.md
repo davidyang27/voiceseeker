@@ -23,6 +23,12 @@ StartLimitIntervalSec=0
 [Install]
 WantedBy=multi-user.target
 
+```
+cd ~/Desktop/voiceseeker/buoy/
+sudo cp buoy_acoustic_system.service /lib/systemd/system/
+cd /etc/systemd/system/multi-user.target.wants/
+sudo ln -sf /lib/systemd/system/buoy_acoustic_system.service buoy_acoustic_system.service 
+```
 
 3. 啟用並啟動服務： (after editing the buoy_acoustic_system.service)
 

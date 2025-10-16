@@ -1,0 +1,17 @@
+[Unit]
+Description=ST6100 Transmit Service
+After=sound.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/echoingocean03/Desktop/voiceseeker/buoy/buoy_acoustic_system.py
+WorkingDirectory=/home/echoingocean03/Desktop/voiceseeker/buoy
+StandardOutput=file:/home/echoingocean03/Desktop/output.log
+StandardError=file:/home/echoingocean03/Desktop/output.err
+Restart=always
+Environment=PYTHONUNBUFFERED=1
+RestartSec=10
+StartLimitIntervalSec=0
+User=echoingocean03
+
+[Install]
+WantedBy=multi-user.target
