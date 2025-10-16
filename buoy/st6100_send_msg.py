@@ -61,7 +61,7 @@ def read_gps(ser, max_wait, stale_secs):
                     # print("GPS RAW:", line)
 
                     if "ERROR" in line:
-                        print("f[GPS] {datetime.datetime.now().strftime('%H:%M:%S')} Received ERROR")
+                        print(f"[GPS] {datetime.datetime.now().strftime('%H:%M:%S')} Received ERROR")
                         return None
 
                     if "$GPGGA" in line:
@@ -70,7 +70,7 @@ def read_gps(ser, max_wait, stale_secs):
 
                         parts = line.split(",")
                         if len(parts) < 6:
-                            print("f[GPS] {datetime.datetime.now().strftime('%H:%M:%S')} Incomplete message:", line)
+                            print(f"[GPS] {datetime.datetime.now().strftime('%H:%M:%S')} Incomplete message:", line)
                             continue
 
                         latitude_raw = parts[2]
@@ -88,7 +88,7 @@ def read_gps(ser, max_wait, stale_secs):
         return None
 
     except Exception as e:
-        print("f[GPS Parsing Error] {datetime.datetime.now().strftime('%H:%M:%S')} ", e)
+        print(f"[GPS Parsing Error] {datetime.datetime.now().strftime('%H:%M:%S')} ", e)
         return None
 
 
@@ -130,20 +130,29 @@ def st6100_send_msg(msg_id: int, msg: str, port: str = "/dev/ttyUSB0",
             # --- Check and clear msg_id before sending ---
             momc_cmd = f"AT%MOMC={msg_id}\r"
             momd_cmd = f"AT%MOMD={msg_id}\r"
-            
+
+            # --- MOMC ---
             print(f"[AT] {datetime.datetime.now().strftime('%H:%M:%S')} Sending: {momc_cmd.strip()}")
             ser.write(momc_cmd.encode("utf-8"))
             time.sleep(1.5)
-            response = ser.read_all().decode(errors="ignore").strip()
+            response = ser.read_all().decode(errors="ignore")
             if response:
-                print(f"[AT] Response: {response}")
+                for line in response.replace("\r", "\n").split("\n"):
+                    line = line.strip()
+                    if line:
+                        print(f"[AT] {datetime.datetime.now().strftime('%H:%M:%S')} {line}")
 
+            # --- MOMD ---
             print(f"[AT] {datetime.datetime.now().strftime('%H:%M:%S')} Sending: {momd_cmd.strip()}")
             ser.write(momd_cmd.encode("utf-8"))
             time.sleep(1.5)
-            response = ser.read_all().decode(errors="ignore").strip()
+            response = ser.read_all().decode(errors="ignore")
             if response:
-                print(f"[AT] Response: {response}")
+                for line in response.replace("\r", "\n").split("\n"):
+                    line = line.strip()
+                    if line:
+                        print(f"[AT] {datetime.datetime.now().strftime('%H:%M:%S')} {line}")
+
 
             # Compose AT command
             at_command = f'AT%MOMT={msg_id},{service_class},{lifetime},{msg_len},{data_format},{sin},{min_code},"{full_msg}"\r'
@@ -164,3 +173,8 @@ def st6100_send_msg(msg_id: int, msg: str, port: str = "/dev/ttyUSB0",
     except serial.SerialException as e:
         print(f"Serial error: {e}")
         return None
+
+
+# if __name__ == "__main__":
+#     resp = st6100_send_msg(1, "Hello Satellite!")
+
