@@ -34,7 +34,7 @@ results_window = collections.deque(maxlen=150)
 threshold = 10  # 超過幾次偵測就發送衛星
 
 # YOLO 模型設定
-model_dir = "/home/david/Desktop/code/weights/best_openvino_model"
+model_dir = "./weights/best_openvino_model"
 model_xml_path = f"{model_dir}/best.xml"
 model_bin_path = f"{model_dir}/best.bin"
 input_size = (640, 640)
