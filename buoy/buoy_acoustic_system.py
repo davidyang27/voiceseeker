@@ -31,7 +31,7 @@ fft_buffer = []               # 暫存 FFT 片段 (for noise)
 
 # 5 分鐘滑動視窗（150 個 2 秒片段）
 results_window = collections.deque(maxlen=150)
-threshold = 10  # 超過幾次偵測就發送衛星
+threshold = 20  # 超過幾次偵測就發送衛星
 
 # YOLO 模型設定
 model_dir = "./weights/best_openvino_model"
@@ -53,7 +53,7 @@ OCT_CENTER = np.array([31.5, 63, 125, 250, 500, 1000,
                        2000, 4000, 8000, 16000])
 OCT_LOW = OCT_CENTER / np.sqrt(2)
 OCT_HIGH = OCT_CENTER * np.sqrt(2)
-NOISE_INTERVAL = 90  # 每隔幾秒發送一次噪音結果 (預設 5 分鐘)
+NOISE_INTERVAL = 5*60  # 每隔幾秒發送一次噪音結果 (預設 5 分鐘)
 
 
 # ================== 通用函式 ==================
