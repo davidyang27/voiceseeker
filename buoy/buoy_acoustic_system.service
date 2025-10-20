@@ -3,6 +3,7 @@ Description=ST6100 Transmit Service
 After=sound.target
 
 [Service]
+ExecStartPre=/bin/sleep 10
 ExecStart=/usr/bin/python3 /home/echoingocean03/Desktop/voiceseeker/buoy/buoy_acoustic_system.py
 WorkingDirectory=/home/echoingocean03/Desktop/voiceseeker/buoy
 StandardOutput=file:/home/echoingocean03/Desktop/output.log
