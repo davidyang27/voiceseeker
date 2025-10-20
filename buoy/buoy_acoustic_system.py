@@ -245,7 +245,7 @@ def noise_analyzer_thread():
                 mask = (freqs >= f_low) & (freqs < f_high)
                 band_power = np.sum(psd[mask])
                 band_db = 10 * np.log10(band_power + 1e-12)
-                bands_energy.append(float(round(band_db, 2)))
+                bands_energy.append(int(round(band_db, 2)))
             print(f"[NOISE] {nowts()} 發送噪音資料 bands={bands_energy}")
             tx_queue.put({"category": 1, "payload": {"bands": bands_energy}})
         except Exception as e:
