@@ -279,7 +279,7 @@ def transmitter_thread():
 
             print(f"[TX] {nowts()} 發送資料 (cat={category}) msg_id={msg_id}: {msg}")
             st6100_send_msg(msg_id=msg_id, msg=msg, port="/dev/ttyUSB0",
-                            baudrate=9600, retries=1, wait_time=45, stale_secs=300)
+                            baudrate=9600, retries=1, wait_time=45, stale_secs=600)
         except Exception as e:
             print(f"[Transmitter Error] {nowts()} {e}")
 
