@@ -45,7 +45,7 @@ def read_gps(ser, max_wait, stale_secs):
         start_time = time.time()
         buffer = ""
 
-        while time.time() - start_time < max_wait:
+        while time.time() - start_time < max_wait+1.5:
             if ser.in_waiting > 0:
                 data = ser.read(ser.in_waiting).decode(errors="ignore")
                 buffer += data
@@ -177,5 +177,6 @@ def st6100_send_msg(msg_id: int, msg: str, port: str = "/dev/ttyUSB0",
 
 # if __name__ == "__main__":
 #     resp = st6100_send_msg(1, "Hello Satellite!")
+
 
 
