@@ -10,6 +10,7 @@ Description=ST6100 Transmit Service
 After=sound.target
 
 [Service]
+ExecStartPre=/bin/sleep 10
 ExecStart=/usr/bin/python3 /home/david/Desktop/voiceseeker/buoy_acoustic_system.py
 WorkingDirectory=/home/david/Desktop/skybee
 StandardOutput=file:/home/david/Desktop/buoy_acoustic_system_log/output.log
