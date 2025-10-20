@@ -122,7 +122,7 @@ def st6100_send_msg(msg_id: int, msg: str, port: str = "/dev/ttyUSB0",
 
             # Fixed parameters
             service_class = 2
-            lifetime = 10
+            lifetime = 1
             data_format = 1
             sin = 128
             min_code = 1
@@ -177,4 +177,5 @@ def st6100_send_msg(msg_id: int, msg: str, port: str = "/dev/ttyUSB0",
 
 # if __name__ == "__main__":
 #     resp = st6100_send_msg(1, "Hello Satellite!")
+
 
