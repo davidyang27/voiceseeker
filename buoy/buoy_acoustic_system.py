@@ -10,7 +10,7 @@ from scipy.ndimage import sobel
 import cv2
 import openvino as ov
 import sys
-
+import sounddevice as sd
 # ====== 匯入衛星傳輸模組 ======
 from st6100_send_msg import st6100_send_msg
 
@@ -19,7 +19,7 @@ from st6100_send_msg import st6100_send_msg
 fs = 48000
 frame_duration = 2
 frame_samples = int(fs * frame_duration)
-device_index = 1
+
 DRAW = False  # 海上運行建議關閉
 WINDOW_NAME = "YOLO Detection on Spectrogram"
 
@@ -57,6 +57,20 @@ NOISE_INTERVAL = 5*60  # 每隔幾秒發送一次噪音結果 (預設 5 分鐘)
 
 
 # ================== 通用函式 ==================
+def get_usb_audio_device():
+    """自動尋找包含 'USB' 或 'Audio' 的輸入裝置名稱"""
+    devices = sd.query_devices()
+    for i, dev in enumerate(devices):
+        name = dev['name'].lower()
+        if dev['max_input_channels'] > 0 and ('usb' in name or 'audio' in name):
+            print(f"[INIT] Using input device: {dev['name']} (index={i}, channels={dev['max_input_channels']})")
+            return i, dev['max_input_channels']
+    # 如果沒找到 USB 裝置，退回預設
+    print("[WARN] No USB Audio Device found, using default input device")
+    default_in = sd.default.device[0]
+    dev_info = sd.query_devices(default_in)
+    return default_in, dev_info['max_input_channels']
+
 def nowts():
     return datetime.datetime.now().strftime('%H:%M:%S')
 
@@ -273,6 +287,7 @@ def transmitter_thread():
 # ================== Main ==================
 def main():
     print(f"[MAIN] {nowts()} 啟動錄音與辨識系統")
+    device_index, channels = get_usb_audio_device()
     core = ov.Core()
     model = core.read_model(model=model_xml_path, weights=model_bin_path)
     compiled_model = core.compile_model(model, "AUTO")
@@ -299,3 +314,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
