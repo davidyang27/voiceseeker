@@ -115,7 +115,7 @@ def analysis_thread(compiled_model, input_name, output_layer, infer_request):
             clean = nr.reduce_noise(y=filtered, sr=fs, stationary=True)
 
             # 保存 FFT 給噪音分析
-            fft_buffer.append(clean)
+            fft_buffer.append(audio_data)
             if len(fft_buffer) > int(NOISE_INTERVAL / frame_duration):
                 fft_buffer.pop(0)
 
