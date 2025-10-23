@@ -122,7 +122,7 @@ def analysis_thread(compiled_model, input_name, output_layer, infer_request):
             f, t, Sxx = spectrogram(clean, fs=fs, nperseg=int(0.01 * fs), noverlap=int(fs * 0.005))
             sobel_edges = np.hypot(sobel(Sxx, axis=0), sobel(Sxx, axis=1))
             sobel_edges_dB = np.log10(sobel_edges + 1e-10)
-            sobel_norm = (sobel_edges_dB - np.min(sobel_edges_dB)) / (np.max(sobel_edges_dB) - np.min(sobel_edges_dB))
+            sobel_norm = (sobel_edges_dB - np.min(sobel_edges_dB)) / (np.max(sobel_edges_dB) - np.min(sobel_edges_dB)+ 1e-10)
             sobel_img = (sobel_norm ** 2 * 255).astype(np.uint8)
             spectrogram_img = cv2.applyColorMap(255 - sobel_img, cv2.COLORMAP_BONE)
 
