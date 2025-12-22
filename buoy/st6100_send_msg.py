@@ -2,6 +2,36 @@ import serial
 import time
 import re
 import datetime
+import os
+import csv
+
+
+def write_full_msg_to_csv(full_msg, csv_path="st6100_tx_log.csv"):
+    """
+    Save full_msg to CSV file
+    full_msg format:
+    lat,lon,utc,temp,msg
+    """
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    parts = full_msg.split(",", 4)
+    if len(parts) != 5:
+        print("[CSV] Invalid full_msg format, skip saving")
+        return
+
+    lat, lon, utc, temp, msg = parts
+
+    file_exists = os.path.isfile(csv_path)
+
+    with open(csv_path, "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+
+        if not file_exists:
+            writer.writerow(["timestamp", "latitude", "longitude", "utc", "temp", "message"])
+
+        writer.writerow([now, lat, lon, utc, temp, msg])
+
+    print(f"[CSV] Saved to {csv_path}")
 
 
 def get_gps_info(ser, retries, wait_time, stale_secs):
@@ -91,6 +121,68 @@ def read_gps(ser, max_wait, stale_secs):
         print("f[GPS Parsing Error] {datetime.datetime.now().strftime('%H:%M:%S')} ", e)
         return None
 
+def get_utc_info(ser, timeout=3):
+    """
+    Get UTC time via AT%UTC
+    Return string: YYYY/MM/DD,HH:MM:SS or None
+    """
+    try:
+        ser.write(b"AT%UTC\r")
+        time.sleep(0.5)
+
+        start = time.time()
+        buffer = ""
+
+        while time.time() - start < timeout:
+            if ser.in_waiting:
+                buffer += ser.read(ser.in_waiting).decode(errors="ignore")
+                lines = buffer.replace("\r", "\n").split("\n")
+
+                for line in lines:
+                    line = line.strip()
+                    if line.startswith("%UTC:"):
+                        return line.replace("%UTC:", "").strip()
+            time.sleep(0.1)
+
+        print("[UTC] Timeout")
+        return None
+
+    except Exception as e:
+        print("[UTC] Error:", e)
+        return None
+
+def get_temp_info(ser, timeout=3):
+    """
+    Get temperature via ATS85?
+    Remove leading zeros from result
+    Return string or None
+    """
+    try:
+        ser.write(b"ATS85?\r")
+        time.sleep(0.5)
+
+        start = time.time()
+        buffer = ""
+
+        while time.time() - start < timeout:
+            if ser.in_waiting:
+                buffer += ser.read(ser.in_waiting).decode(errors="ignore")
+                lines = buffer.replace("\r", "\n").split("\n")
+
+                for line in lines:
+                    line = line.strip()
+                    if line.startswith("S85:"):
+                        temp_raw = line.replace("S85:", "").strip()
+                        temp_clean = temp_raw.lstrip("0") or "0"
+                        return temp_clean
+            time.sleep(0.1)
+
+        print("[TEMP] Timeout")
+        return None
+
+    except Exception as e:
+        print("[TEMP] Error:", e)
+        return None
 
 def st6100_send_msg(msg_id: int, msg: str, port: str = "/dev/ttyUSB0",
                      baudrate: int = 9600, retries: int = 1,
@@ -110,6 +202,10 @@ def st6100_send_msg(msg_id: int, msg: str, port: str = "/dev/ttyUSB0",
             gps_info = get_gps_info(ser, retries=retries, wait_time=wait_time, stale_secs=stale_secs)
             # print("GPS Info:", gps_info)
 
+            # Get UTC & Temperature
+            utc_info = get_utc_info(ser) or "N"
+            temp_info = get_temp_info(ser) or "N"
+
             if not gps_info:
                 # print("[GPS] Failed to get GPS info")
                 full_msg = f"N,N,{msg}"
@@ -117,6 +213,9 @@ def st6100_send_msg(msg_id: int, msg: str, port: str = "/dev/ttyUSB0",
                 # Prefix GPS coordinates to the message
                 full_msg = f"{gps_info[0]},{gps_info[2]},{msg}"
 
+            # Save to CSV
+            write_full_msg_to_csv(full_msg)
+            
             # Calculate message length
             msg_len = len(full_msg.encode("utf-8"))+2
 
