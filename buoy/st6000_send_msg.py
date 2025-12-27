@@ -123,65 +123,146 @@ def read_gps(ser, max_wait, stale_secs):
 
 def get_utc_info(ser, timeout=3):
     """
-    Get UTC time via AT%UTC
-    Return string: YYYY/MM/DD,HH:MM:SS or None
+    Get UTC time via ATC%UTC
+
+    Success response:
+        %UTC: 2025-09-08 03:45:07
+        OK
+
+    Failure response:
+        ERROR
+
+    Return:
+        "2025-09-08 03:45:07" or None
     """
     try:
-        ser.write(b"AT%UTC\r")
-        time.sleep(0.5)
+        print("[UTC] Sending ATC%UTC")
+        ser.reset_input_buffer()
+        ser.write(b"ATC%UTC\r")
+        time.sleep(0.3)
 
         start = time.time()
         buffer = ""
 
         while time.time() - start < timeout:
             if ser.in_waiting:
-                buffer += ser.read(ser.in_waiting).decode(errors="ignore")
+                data = ser.read(ser.in_waiting).decode(errors="ignore")
+                buffer += data
+
+                print("[UTC] RAW DATA:", repr(data))
+
                 lines = buffer.replace("\r", "\n").split("\n")
+                buffer = lines[-1]  # keep incomplete line
 
-                for line in lines:
+                for line in lines[:-1]:
+                    raw_line = line
                     line = line.strip()
-                    if line.startswith("%UTC:"):
-                        return line.replace("%UTC:", "").strip()
-            time.sleep(0.1)
 
-        print("[UTC] Timeout")
+                    print("[UTC] READ LINE:", repr(raw_line))
+
+                    # Skip empty
+                    if not line:
+                        continue
+
+                    # Skip command echo
+                    if line.upper().startswith("ATC%UTC"):
+                        print("[UTC] SKIP Echo")
+                        continue
+
+                    # ERROR
+                    if line.upper() == "ERROR":
+                        print("[UTC][ERR] Modem returned ERROR")
+                        return None
+
+                    # UTC line
+                    if line.upper().startswith("%UTC:"):
+                        utc_value = line.replace("%UTC:", "").strip()
+                        print("[UTC] UTC =", utc_value)
+                        return utc_value
+
+                    # OK (ignore)
+                    if line.upper() == "OK":
+                        print("[UTC] OK received")
+                        continue
+
+            time.sleep(0.05)
+
+        print("[UTC][ERR] Timeout waiting for ATC%UTC")
+        print("[UTC][ERR] FINAL BUFFER:", repr(buffer))
         return None
 
     except Exception as e:
-        print("[UTC] Error:", e)
+        print("[UTC][ERR] Exception:", e)
         return None
+
 
 def get_temp_info(ser, timeout=3):
     """
     Get temperature via ATS85?
-    Remove leading zeros from result
-    Return string or None
+    Typical response:
+        ATS85?
+        00231
+
+        OK
     """
     try:
+        print("[TEMP] Sending ATS85?")
+        ser.reset_input_buffer()
         ser.write(b"ATS85?\r")
-        time.sleep(0.5)
+        time.sleep(0.3)
 
         start = time.time()
         buffer = ""
 
         while time.time() - start < timeout:
             if ser.in_waiting:
-                buffer += ser.read(ser.in_waiting).decode(errors="ignore")
+                data = ser.read(ser.in_waiting).decode(errors="ignore")
+                buffer += data
+
+                print("[TEMP] RAW DATA:", repr(data))
+
                 lines = buffer.replace("\r", "\n").split("\n")
+                buffer = lines[-1]  # keep incomplete line
 
-                for line in lines:
+                for line in lines[:-1]:
+                    raw_line = line
                     line = line.strip()
-                    if line.startswith("S85:"):
-                        temp_raw = line.replace("S85:", "").strip()
-                        temp_clean = temp_raw.lstrip("0") or "0"
-                        return temp_clean
-            time.sleep(0.1)
 
-        print("[TEMP] Timeout")
+                    print("[TEMP] READ LINE:", repr(raw_line))
+
+                    # Ignore empty
+                    if not line:
+                        print("[TEMP] SKIP Empty")
+                        continue
+
+                    # Ignore command echo
+                    if line.upper().startswith("ATS85"):
+                        print("[TEMP] SKIP Echo")
+                        continue
+                    
+                    # ERROR
+                    if line.upper() == "ERROR":
+                        print("[TEMP][ERR] Modem returned ERROR")
+                        return None
+                    
+                    # OK received
+                    if line.upper() == "OK":
+                        print("[TEMP] SKIP OK received, stop")
+                        return None
+
+                    # Temperature line
+                    value = line.lstrip("0") or "0"
+                    print("[TEMP][DBG] Temperature =", value)
+                    return value
+
+            time.sleep(0.05)
+
+        print("[TEMP][ERR] Timeout waiting for ATS85?")
+        print("[TEMP][ERR] FINAL BUFFER:", repr(buffer))
         return None
 
     except Exception as e:
-        print("[TEMP] Error:", e)
+        print("[TEMP][ERR] Exception:", e)
         return None
 
 def st6000_send_msg(msg_id: int, msg: str, port: str = "/dev/ttyUSB0",
@@ -208,10 +289,10 @@ def st6000_send_msg(msg_id: int, msg: str, port: str = "/dev/ttyUSB0",
 
             if not gps_info:
                 # print("[GPS] Failed to get GPS info")
-                full_msg = f"N,N,{msg}"
+                full_msg = f"N,N,{utc_info},{temp_info},{msg}"
             else:
                 # Prefix GPS coordinates to the message
-                full_msg = f"{gps_info[0]},{gps_info[2]},{msg}"
+                full_msg = f"{gps_info[0]},{gps_info[2]},{utc_info},{temp_info},{msg}"
 
             # Save to CSV
             write_full_msg_to_csv(full_msg)
