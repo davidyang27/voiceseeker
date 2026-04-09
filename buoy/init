@@ -1,0 +1,15 @@
+sudo pip install sounddevice --break-system-packages
+
+sudo apt-get install libportaudio2
+
+sudo pip install scipy --break-system-packages
+
+sudo pip install noisereduce --break-system-packages
+
+sudo pip install opencv-python --break-system-packages
+
+sudo pip install openvino --break-system-packages
+
+
+
+
