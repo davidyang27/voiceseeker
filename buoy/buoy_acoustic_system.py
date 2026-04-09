@@ -102,10 +102,34 @@ def analysis_thread(compiled_model, input_name, output_layer, infer_request):
     while True:
         try:
             audio_data = audio_queue.get()
-            # ... (前段頻譜生成與推論保持不變) ...
-            
+            filtered = highpass_filter(audio_data, 2000, fs)
+            clean = nr.reduce_noise(y=filtered, sr=fs, stationary=True)
+
+            fft_buffer.append(clean)
+            if len(fft_buffer) > int(NOISE_INTERVAL / frame_duration):
+                fft_buffer.pop(0)
+
+            # 頻譜圖生成與 Sobel 增強
+            f, t, Sxx = spectrogram(clean, fs=fs, nperseg=int(0.01*fs), noverlap=int(fs*0.005))
+            sobel_edges = np.hypot(sobel(Sxx, axis=0), sobel(Sxx, axis=1))
+            sobel_edges_dB = np.log10(sobel_edges + 1e-10)
+            sobel_norm = (sobel_edges_dB - np.min(sobel_edges_dB)) / (np.max(sobel_edges_dB) - np.min(sobel_edges_dB))
+            sobel_img = (sobel_norm ** 2 * 255).astype(np.uint8)
+            spectrogram_img = cv2.applyColorMap(255 - sobel_img, cv2.COLORMAP_BONE)
+
+            freq_min_idx = np.searchsorted(f, 1000)
+            freq_max_idx = np.searchsorted(f, 30000)
+            spectrogram_img = spectrogram_img[freq_min_idx:freq_max_idx, :]
+            spectrogram_img = cv2.flip(spectrogram_img, 0)
+            spectrogram_img = cv2.resize(spectrogram_img, (IMG_W, IMG_H))
+
             # --- YOLO 推論 ---
-            # ... (執行 infer_request.infer 並取得 preds) ...
+            inp = spectrogram_img.astype(np.float32) / 255.0
+            inp = inp.transpose(2, 0, 1)
+            inp = np.expand_dims(inp, axis=0)
+            infer_request.infer(inputs={input_name: inp})
+            outputs = infer_request.get_output_tensor(output_layer.index).data
+            preds = outputs.transpose(0, 2, 1)[0]
             preds = preds[preds[:, 4] >= conf_threshold]
 
             display_img = spectrogram_img.copy() if DRAW else None
