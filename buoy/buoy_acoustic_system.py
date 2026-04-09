@@ -272,10 +272,12 @@ def noise_analyzer_thread():
                 mask = (freqs >= f_low) & (freqs < f_high)
                 band_power = np.sum(psd[mask])
                 band_db = 10 * np.log10(band_power + 1e-12)
-                bands_energy.append(round(band_db, 2))
+                # 1. 轉成標準 float (移除 np.float64)
+                # 2. 格式化為一位小數，節省傳輸字元
+                bands_energy.append(float(f"{band_db:.1f}"))
 
             tx_queue.put({"category": 1, "payload": {"bands": bands_energy}})
-            print(f"[NOISE] {nowts()} 發送噪音資料 bands={bands_energy}")
+            print(f"[NOISE] {nowts()} 發送噪音資料 bands={bands_energy}\n")
         except Exception as e:
             print(f"[Noise Analyzer Error] {nowts()} {e}")
 
@@ -301,7 +303,8 @@ def transmitter_thread():
                 msg = f"0,{msg_id},{p['count']},{p['f_start']},{p['f_end']},{p['duration_ms']}"
             elif category == 1:
                 bands = item["payload"]["bands"]
-                msg = "1," + str(msg_id) + "," + ",".join(str(v) for v in bands)
+                # 確保所有數值都經過 float() 轉換，避免出現 np.float64 字樣
+                msg = f"1,{msg_id}," + ",".join(f"{v:.1f}" for v in bands)
             else:
                 continue
 
