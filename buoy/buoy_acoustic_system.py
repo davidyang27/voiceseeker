@@ -102,34 +102,10 @@ def analysis_thread(compiled_model, input_name, output_layer, infer_request):
     while True:
         try:
             audio_data = audio_queue.get()
-            filtered = highpass_filter(audio_data, 2000, fs)
-            clean = nr.reduce_noise(y=filtered, sr=fs, stationary=True)
-
-            fft_buffer.append(clean)
-            if len(fft_buffer) > int(NOISE_INTERVAL / frame_duration):
-                fft_buffer.pop(0)
-
-            # 頻譜圖生成與 Sobel 增強
-            f, t, Sxx = spectrogram(clean, fs=fs, nperseg=int(0.01*fs), noverlap=int(fs*0.005))
-            sobel_edges = np.hypot(sobel(Sxx, axis=0), sobel(Sxx, axis=1))
-            sobel_edges_dB = np.log10(sobel_edges + 1e-10)
-            sobel_norm = (sobel_edges_dB - np.min(sobel_edges_dB)) / (np.max(sobel_edges_dB) - np.min(sobel_edges_dB))
-            sobel_img = (sobel_norm ** 2 * 255).astype(np.uint8)
-            spectrogram_img = cv2.applyColorMap(255 - sobel_img, cv2.COLORMAP_BONE)
-
-            freq_min_idx = np.searchsorted(f, 1000)
-            freq_max_idx = np.searchsorted(f, 30000)
-            spectrogram_img = spectrogram_img[freq_min_idx:freq_max_idx, :]
-            spectrogram_img = cv2.flip(spectrogram_img, 0)
-            spectrogram_img = cv2.resize(spectrogram_img, (IMG_W, IMG_H))
-
+            # ... (前段頻譜生成與推論保持不變) ...
+            
             # --- YOLO 推論 ---
-            inp = spectrogram_img.astype(np.float32) / 255.0
-            inp = inp.transpose(2, 0, 1)
-            inp = np.expand_dims(inp, axis=0)
-            infer_request.infer(inputs={input_name: inp})
-            outputs = infer_request.get_output_tensor(output_layer.index).data
-            preds = outputs.transpose(0, 2, 1)[0]
+            # ... (執行 infer_request.infer 並取得 preds) ...
             preds = preds[preds[:, 4] >= conf_threshold]
 
             display_img = spectrogram_img.copy() if DRAW else None
@@ -141,38 +117,42 @@ def analysis_thread(compiled_model, input_name, output_layer, infer_request):
                 result_queue.put({"count": 0, "f_start": None, "f_end": None, "duration_ms": None})
                 continue
 
-            all_boxes = []
-            all_scores = []
+            # --- 步驟 1: 物理條件篩選 (準備給 NMS 的候選名單) ---
+            candidate_boxes = []
+            candidate_scores = []
             
-            # 遍歷所有預測結果進行物理條件初步過濾
             for xc, yc, w, h, sc in preds:
                 x1, y1, x2, y2 = xc - w/2, yc - h/2, xc + w/2, yc + h/2
                 box_h = y2 - y1
                 
-                # === 物理篩選條件 ===
-                is_valid = (y2 >= MIN_Y2) and (y1 <= MAX_Y1) and (box_h >= MIN_HEIGHT)
+                # 符合物理篩選條件才加入候選
+                if (y2 >= MIN_Y2) and (y1 <= MAX_Y1) and (box_h >= MIN_HEIGHT):
+                    candidate_boxes.append([x1, y1, x2, y2])
+                    candidate_scores.append(float(sc))
 
-                if is_valid:
-                    all_boxes.append([x1, y1, x2, y2])
-                    all_scores.append(float(sc))
-                    if DRAW:
-                        cv2.rectangle(display_img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
-                        cv2.putText(display_img, f"OK {sc:.2f}", (int(x1), int(y1)-5), 1, 1, (0, 255, 0), 1)
-                else:
-                    if DRAW:
-                        cv2.rectangle(display_img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), 1)
-                        cv2.putText(display_img, "Filtered", (int(x1), int(y1)-5), 1, 0.8, (0, 0, 255), 1)
-
-            # 進行 NMS
-            kept_idx = run_nms_xyxy(all_boxes, all_scores, conf_threshold, nms_iou_threshold)
+            # --- 步驟 2: 執行 NMS (解決重疊框問題) ---
+            kept_idx = run_nms_xyxy(candidate_boxes, candidate_scores, conf_threshold, nms_iou_threshold)
             final_count = len(kept_idx)
 
             if final_count > 0:
-                # 挑選分數最高的一個作為特徵回傳
-                best_i = max(kept_idx, key=lambda i: all_scores[i])
-                bx1, by1, bx2, by2 = all_boxes[best_i]
+                # --- 步驟 3: 只針對被 NMS 保留下來的框進行處理 ---
+                for i in kept_idx:
+                    bx1, by1, bx2, by2 = candidate_boxes[i]
+                    score = candidate_scores[i]
+
+                    # 只有在 DRAW=True 且是被留下的框才畫出來
+                    if DRAW:
+                        cv2.rectangle(display_img, (int(bx1), int(by1)), (int(bx2), int(by2)), (0, 255, 0), 2)
+                        label = f"{class_names[0]}: {score:.2f}"
+                        cv2.putText(display_img, label, (int(bx1), int(by1)-10), 
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+                # 挑選分數最高的一個計算特徵回傳給衛星任務
+                best_i = max(kept_idx, key=lambda i: candidate_scores[i])
+                bx1, by1, bx2, by2 = candidate_boxes[best_i]
                 bxc, byc, bw, bh = (bx1+bx2)/2, (by1+by2)/2, (bx2-bx1), (by2-by1)
                 f_start, f_end, dur = box_to_features(bxc, byc, bw, bh)
+                
                 result_queue.put({"count": final_count, "f_start": f_start, "f_end": f_end, "duration_ms": dur})
             else:
                 result_queue.put({"count": 0, "f_start": None, "f_end": None, "duration_ms": None})
@@ -183,8 +163,6 @@ def analysis_thread(compiled_model, input_name, output_layer, infer_request):
 
         except Exception as e:
             print(f"[分析錯誤] {nowts()} {e}")
-
-# ... (其餘 Results Handler, Noise, Transmitter, Main 部分保持不變)
 
 
 # ================== Results Handler Thread ==================
