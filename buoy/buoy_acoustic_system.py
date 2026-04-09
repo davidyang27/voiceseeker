@@ -58,7 +58,7 @@ TOTAL_MS = frame_duration * 1000.0
 OCT_CENTER = np.array([31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000])
 OCT_LOW = OCT_CENTER / np.sqrt(2)
 OCT_HIGH = OCT_CENTER * np.sqrt(2)
-NOISE_INTERVAL = 90  
+NOISE_INTERVAL = 600  
 
 
 # ================== 通用函式 ==================
