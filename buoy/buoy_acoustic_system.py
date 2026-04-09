@@ -24,15 +24,20 @@ device_index = 1
 DRAW = False  # 海上運行建議關閉
 WINDOW_NAME = "YOLO Detection on Spectrogram"
 
+# --- 影像座標空間篩選條件 (針對 640x640 影像) ---
+MIN_Y2 = 350       # 框的下緣 (y_max) 必須大於此值 (靠近影像下方)
+MAX_Y1 = 500       # 框的上緣 (y_min) 必須小於此值 (避免框太靠下方邊緣)
+MIN_HEIGHT = 50    # 框的高度(像素)必須大於此數值
+
 # 資料佇列
 audio_queue = queue.Queue()
-result_queue = queue.Queue()  # 辨識結果（Whistle）
-tx_queue = queue.Queue()      # 傳送佇列（Whistle + Noise）
-fft_buffer = []               # 暫存 FFT 片段 (for noise)
+result_queue = queue.Queue()  # 辨識結果
+tx_queue = queue.Queue()      # 傳送佇列
+fft_buffer = []               
 
-# 5 分鐘滑動視窗（150 個 2 秒片段）
+# 5 分鐘滑動視窗
 results_window = collections.deque(maxlen=150)
-threshold = 10  # 超過幾次偵測就發送衛星
+threshold = 10  
 
 # YOLO 模型設定
 model_dir = "/home/david/Desktop/code/weights/best_openvino_model"
@@ -43,18 +48,17 @@ class_names = ["Whistle"]
 conf_threshold = 0.30
 nms_iou_threshold = 0.50
 
-# 頻率設定（1kHz~30kHz）
+# 頻率與物理轉換設定
 FMIN, FMAX = 1000.0, 30000.0
 IMG_W = IMG_H = 640
 PIXEL_TO_HZ = (FMAX - FMIN) / IMG_H
 TOTAL_MS = frame_duration * 1000.0
 
-# Octave band 定義（依據 IEC 61260，至 16kHz）
-OCT_CENTER = np.array([31.5, 63, 125, 250, 500, 1000,
-                       2000, 4000, 8000, 16000])
+# Octave band 定義
+OCT_CENTER = np.array([31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000])
 OCT_LOW = OCT_CENTER / np.sqrt(2)
 OCT_HIGH = OCT_CENTER * np.sqrt(2)
-NOISE_INTERVAL = 90  # 每隔幾秒發送一次噪音結果 (預設 5 分鐘)
+NOISE_INTERVAL = 90  
 
 
 # ================== 通用函式 ==================
@@ -94,7 +98,6 @@ def box_to_features(xc, yc, w, h):
 
 
 # ================== Whistle 辨識分析 ==================
-# ================== Whistle 辨識分析 ==================
 def analysis_thread(compiled_model, input_name, output_layer, infer_request):
     while True:
         try:
@@ -102,12 +105,11 @@ def analysis_thread(compiled_model, input_name, output_layer, infer_request):
             filtered = highpass_filter(audio_data, 2000, fs)
             clean = nr.reduce_noise(y=filtered, sr=fs, stationary=True)
 
-            # 保存 FFT 給噪音分析
             fft_buffer.append(clean)
             if len(fft_buffer) > int(NOISE_INTERVAL / frame_duration):
                 fft_buffer.pop(0)
 
-            # 頻譜圖生成
+            # 頻譜圖生成與 Sobel 增強
             f, t, Sxx = spectrogram(clean, fs=fs, nperseg=int(0.01*fs), noverlap=int(fs*0.005))
             sobel_edges = np.hypot(sobel(Sxx, axis=0), sobel(Sxx, axis=1))
             sobel_edges_dB = np.log10(sobel_edges + 1e-10)
@@ -130,7 +132,6 @@ def analysis_thread(compiled_model, input_name, output_layer, infer_request):
             preds = outputs.transpose(0, 2, 1)[0]
             preds = preds[preds[:, 4] >= conf_threshold]
 
-            # 準備繪圖用的複本 (避免影響推論資料)
             display_img = spectrogram_img.copy() if DRAW else None
 
             if preds.shape[0] == 0:
@@ -140,37 +141,50 @@ def analysis_thread(compiled_model, input_name, output_layer, infer_request):
                 result_queue.put({"count": 0, "f_start": None, "f_end": None, "duration_ms": None})
                 continue
 
-            boxes_xyxy = []
-            scores = preds[:, 4].astype(float).tolist()
-            for xc, yc, w, h, sc in preds:
-                boxes_xyxy.append([xc - w/2, yc - h/2, xc + w/2, yc + h/2])
+            all_boxes = []
+            all_scores = []
             
-            kept = run_nms_xyxy(boxes_xyxy, scores, conf_threshold, nms_iou_threshold)
-            count = int(len(kept))
+            # 遍歷所有預測結果進行物理條件初步過濾
+            for xc, yc, w, h, sc in preds:
+                x1, y1, x2, y2 = xc - w/2, yc - h/2, xc + w/2, yc + h/2
+                box_h = y2 - y1
+                
+                # === 物理篩選條件 ===
+                is_valid = (y2 >= MIN_Y2) and (y1 <= MAX_Y1) and (box_h >= MIN_HEIGHT)
 
-            if count > 0:
-                for i in kept:
-                    x1, y1, x2, y2 = boxes_xyxy[i]
-                    # 如果 DRAW 為 True，畫出框和分數
+                if is_valid:
+                    all_boxes.append([x1, y1, x2, y2])
+                    all_scores.append(float(sc))
                     if DRAW:
                         cv2.rectangle(display_img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
-                        label = f"{class_names[0]}: {scores[i]:.2f}"
-                        cv2.putText(display_img, label, (int(x1), int(y1)-10), 
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                        cv2.putText(display_img, f"OK {sc:.2f}", (int(x1), int(y1)-5), 1, 1, (0, 255, 0), 1)
+                else:
+                    if DRAW:
+                        cv2.rectangle(display_img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), 1)
+                        cv2.putText(display_img, "Filtered", (int(x1), int(y1)-5), 1, 0.8, (0, 0, 255), 1)
 
-                best_i = max(kept, key=lambda i: scores[i])
-                bx1, by1, bx2, by2 = boxes_xyxy[best_i]
-                xc, yc, w, h = (bx1 + bx2)/2, (by1 + by2)/2, (bx2 - bx1), (by2 - by1)
-                f_start, f_end, duration_ms = box_to_features(xc, yc, w, h)
-                result_queue.put({"count": count, "f_start": f_start, "f_end": f_end, "duration_ms": duration_ms})
+            # 進行 NMS
+            kept_idx = run_nms_xyxy(all_boxes, all_scores, conf_threshold, nms_iou_threshold)
+            final_count = len(kept_idx)
 
-            # 顯示結果
+            if final_count > 0:
+                # 挑選分數最高的一個作為特徵回傳
+                best_i = max(kept_idx, key=lambda i: all_scores[i])
+                bx1, by1, bx2, by2 = all_boxes[best_i]
+                bxc, byc, bw, bh = (bx1+bx2)/2, (by1+by2)/2, (bx2-bx1), (by2-by1)
+                f_start, f_end, dur = box_to_features(bxc, byc, bw, bh)
+                result_queue.put({"count": final_count, "f_start": f_start, "f_end": f_end, "duration_ms": dur})
+            else:
+                result_queue.put({"count": 0, "f_start": None, "f_end": None, "duration_ms": None})
+
             if DRAW:
                 cv2.imshow(WINDOW_NAME, display_img)
                 cv2.waitKey(1)
 
         except Exception as e:
             print(f"[分析錯誤] {nowts()} {e}")
+
+# ... (其餘 Results Handler, Noise, Transmitter, Main 部分保持不變)
 
 
 # ================== Results Handler Thread ==================
