@@ -94,6 +94,7 @@ def box_to_features(xc, yc, w, h):
 
 
 # ================== Whistle 辨識分析 ==================
+# ================== Whistle 辨識分析 ==================
 def analysis_thread(compiled_model, input_name, output_layer, infer_request):
     while True:
         try:
@@ -106,6 +107,7 @@ def analysis_thread(compiled_model, input_name, output_layer, infer_request):
             if len(fft_buffer) > int(NOISE_INTERVAL / frame_duration):
                 fft_buffer.pop(0)
 
+            # 頻譜圖生成
             f, t, Sxx = spectrogram(clean, fs=fs, nperseg=int(0.01*fs), noverlap=int(fs*0.005))
             sobel_edges = np.hypot(sobel(Sxx, axis=0), sobel(Sxx, axis=1))
             sobel_edges_dB = np.log10(sobel_edges + 1e-10)
@@ -128,7 +130,13 @@ def analysis_thread(compiled_model, input_name, output_layer, infer_request):
             preds = outputs.transpose(0, 2, 1)[0]
             preds = preds[preds[:, 4] >= conf_threshold]
 
+            # 準備繪圖用的複本 (避免影響推論資料)
+            display_img = spectrogram_img.copy() if DRAW else None
+
             if preds.shape[0] == 0:
+                if DRAW:
+                    cv2.imshow(WINDOW_NAME, display_img)
+                    cv2.waitKey(1)
                 result_queue.put({"count": 0, "f_start": None, "f_end": None, "duration_ms": None})
                 continue
 
@@ -136,15 +144,31 @@ def analysis_thread(compiled_model, input_name, output_layer, infer_request):
             scores = preds[:, 4].astype(float).tolist()
             for xc, yc, w, h, sc in preds:
                 boxes_xyxy.append([xc - w/2, yc - h/2, xc + w/2, yc + h/2])
+            
             kept = run_nms_xyxy(boxes_xyxy, scores, conf_threshold, nms_iou_threshold)
             count = int(len(kept))
 
             if count > 0:
+                for i in kept:
+                    x1, y1, x2, y2 = boxes_xyxy[i]
+                    # 如果 DRAW 為 True，畫出框和分數
+                    if DRAW:
+                        cv2.rectangle(display_img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+                        label = f"{class_names[0]}: {scores[i]:.2f}"
+                        cv2.putText(display_img, label, (int(x1), int(y1)-10), 
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
                 best_i = max(kept, key=lambda i: scores[i])
-                x1, y1, x2, y2 = boxes_xyxy[best_i]
-                xc, yc, w, h = (x1 + x2)/2, (y1 + y2)/2, (x2 - x1), (y2 - y1)
+                bx1, by1, bx2, by2 = boxes_xyxy[best_i]
+                xc, yc, w, h = (bx1 + bx2)/2, (by1 + by2)/2, (bx2 - bx1), (by2 - by1)
                 f_start, f_end, duration_ms = box_to_features(xc, yc, w, h)
                 result_queue.put({"count": count, "f_start": f_start, "f_end": f_end, "duration_ms": duration_ms})
+
+            # 顯示結果
+            if DRAW:
+                cv2.imshow(WINDOW_NAME, display_img)
+                cv2.waitKey(1)
+
         except Exception as e:
             print(f"[分析錯誤] {nowts()} {e}")
 
